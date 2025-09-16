@@ -2,7 +2,7 @@ import logging
 import time
 from ingestion.client.arxivClient import ArxivClient
 from ingestion.downloaders.pdfDownloader import PDFDownloader
-from ingestion.parser.pdf_parser import PDFParser
+from ingestion.parser.parser import PDFParser
 import xml.etree.ElementTree as ET
 from pathlib import Path
 import os

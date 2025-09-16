@@ -22,17 +22,46 @@ services:
       - OPENSEARCH_HOST=http://opensearch:9200
       - OLLAMA_HOST=http://ollama:11434
       - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')\""]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
+    volumes:
+      - ./ingestion:/app/ingestion
     networks:
       - rag-network
 
   # ------------------------
-  # OpenSearch service
+  # Airflow service
+  # ------------------------
+  airflow:
+    build:
+      context: ./airflow
+      dockerfile: Dockerfile
+    image: rag-airflow:latest
+    container_name: rag-airflow
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - AIRFLOW_HOME=/opt/airflow
+      - PYTHONPATH=/opt/airflow:/opt/airflow/ingestion
+      - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
+      - OPENSEARCH_HOST=http://opensearch:9200
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./ingestion:/opt/airflow/ingestion
+      - ./data:/opt/airflow/data
+      - ./airflow/plugins:/opt/airflow/plugins
+      - airflow_logs:/opt/airflow/logs
+    ports:
+      - "8080:8080"
+    networks:
+      - rag-network
+
+  # ------------------------
+  # OpenSearch
   # ------------------------
   opensearch:
     image: opensearchproject/opensearch:2.19.0
@@ -51,14 +80,14 @@ services:
     volumes:
       - opensearch_data:/usr/share/opensearch/data
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:9200 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
-      start_period: 60s
-    restart: unless-stopped
+      start_period: 30s
     networks:
       - rag-network
+
 
   # ------------------------
   # OpenSearch Dashboards
@@ -73,57 +102,11 @@ services:
       - DISABLE_SECURITY_DASHBOARDS_PLUGIN=true
     depends_on:
       - opensearch
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
     networks:
       - rag-network
 
   # ------------------------
-  # Airflow service
-  # ------------------------
-  airflow:
-    build:
-      context: .
-      dockerfile: ./airflow/Dockerfile
-    image: rag-airflow:arm64
-    platform: linux/arm64
-    container_name: rag-airflow
-    depends_on:
-      postgres:
-        condition: service_healthy
-      opensearch:
-        condition: service_healthy
-    env_file:
-      - .env
-    environment:
-      - AIRFLOW_HOME=/opt/airflow
-      - PYTHONPATH=/opt/airflow:/opt/airflow/ingestion
-      - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
-      - OPENSEARCH_HOST=http://opensearch:9200
-      - OLLAMA_HOST=http://ollama:11434
-    volumes:
-      - ./airflow/dags:/opt/airflow/dags
-      - airflow_logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-      - ./data:/opt/airflow/data
-      - ./ingestion:/opt/airflow/ingestion
-    ports:
-      - "8080:8080"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 120s
-    networks:
-      - rag-network
-
-  # ------------------------
-  # Ollama service
+  # Ollama
   # ------------------------
   ollama:
     image: ollama/ollama:0.11.2
@@ -137,7 +120,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
     deploy:
       resources:
         limits:
@@ -148,17 +130,15 @@ services:
       - rag-network
 
   # ------------------------
-  # Postgres service
+  # Postgres
   # ------------------------
   postgres:
     image: postgres:16-alpine
     container_name: rag-postgres
-    platform: linux/arm64
     environment:
       - POSTGRES_DB=rag_db
       - POSTGRES_USER=rag_user
       - POSTGRES_PASSWORD=rag_password
-      - POSTGRES_HOST_AUTH_METHOD=password
       - PGDATA=/var/lib/postgresql/data/pgdata
     ports:
       - "5432:5432"
@@ -170,7 +150,6 @@ services:
       timeout: 5s
       retries: 10
       start_period: 30s
-    restart: unless-stopped
     networks:
       - rag-network
 
