@@ -24,59 +24,81 @@ client = OpenSearch(
 
 def ensure_indices():
     """
-    Ensure that the required indices exist in OpenSearch.
+    Ensure that the required indices exist in OpenSearch with proper mappings.
     """
     try:
+        # --- Papers index ---
         if not client.indices.exists(index=PAPERS_INDEX):
             logger.info(f"Creating index: {PAPERS_INDEX}")
             client.indices.create(
                 index=PAPERS_INDEX,
                 body={
+                    "settings": {
+                        "analysis": {
+                            "analyzer": {
+                                "scientific_analyzer": {
+                                    "type": "standard",
+                                    "stopwords": "_english_"
+                                }
+                            }
+                        }
+                    },
                     "mappings": {
                         "properties": {
                             "arxiv_id": {"type": "keyword"},
-                            "title": {"type": "text"},
-                            "authors": {"type": "text"},
-                            "abstract": {"type": "text"},
-                            "published_date": {"type": "date"},
+                            "title": {
+                                "type": "text",
+                                "analyzer": "scientific_analyzer",
+                                "fields": {"raw": {"type": "keyword"}}
+                            },
+                            "abstract": {
+                                "type": "text",
+                                "analyzer": "scientific_analyzer"
+                            },
+                            "authors": {"type": "keyword"},
+                            "categories": {"type": "keyword"},
+                            "published_at": {"type": "date"},
                             "pdf_url": {"type": "keyword"}
                         }
                     }
                 }
             )
 
+        # --- Paper chunks index (vector embeddings) ---
         if not client.indices.exists(index=CHUNKS_INDEX):
             logger.info(f"Creating index: {CHUNKS_INDEX}")
-            
-            # Try different vector field types based on OpenSearch version
-            vector_mappings = [
-                # First try knn_vector (OpenSearch 2.x)
-                {
-                    "mappings": {
-                        "properties": {
-                            "paper_id": {"type": "keyword"},
-                            "arxiv_id": {"type": "keyword"},
-                            "chunk_idx": {"type": "integer"},
-                            "text": {"type": "text"},
-                            "embedding": {
-                                "type": "knn_vector",
-                                "dimension": 768,
-                                "method": {
-                                    "name": "hnsw",
-                                    "space_type": "cosinesimil",
-                                    "engine": "lucene"
-                                }
+
+            # Try knn_vector first (OpenSearch 2.x)
+            vector_mapping = {
+                "settings": {
+                    "index": {"knn": True}
+                },
+                "mappings": {
+                    "properties": {
+                        "paper_id": {"type": "keyword"},
+                        "arxiv_id": {"type": "keyword"},
+                        "chunk_idx": {"type": "integer"},
+                        "text": {"type": "text"},
+                        "embedding": {
+                            "type": "knn_vector",
+                            "dimension": 768,
+                            "method": {
+                                "name": "hnsw",
+                                "space_type": "cosinesimil",
+                                "engine": "lucene"
                             }
                         }
-                    },
-                    "settings": {
-                        "index": {
-                            "knn": True
-                        }
                     }
-                },
-                # Fallback to dense_vector (older versions)
-                {
+                }
+            }
+
+            try:
+                client.indices.create(index=CHUNKS_INDEX, body=vector_mapping)
+                logger.info(f"Successfully created {CHUNKS_INDEX} with k-NN vectors")
+            except Exception as e:
+                logger.warning(f"Failed to create k-NN vector index: {e}")
+                # Fallback to dense_vector or float array
+                fallback_mapping = {
                     "mappings": {
                         "properties": {
                             "paper_id": {"type": "keyword"},
@@ -86,50 +108,34 @@ def ensure_indices():
                             "embedding": {"type": "dense_vector", "dims": 768}
                         }
                     }
-                },
-                # Final fallback - no vector field
-                {
-                    "mappings": {
-                        "properties": {
-                            "paper_id": {"type": "keyword"},
-                            "arxiv_id": {"type": "keyword"},
-                            "chunk_idx": {"type": "integer"},
-                            "text": {"type": "text"},
-                            "embedding": {"type": "float", "index": False}  # Store as array of floats
-                        }
-                    }
                 }
-            ]
-            
-            created = False
-            for i, mapping in enumerate(vector_mappings):
-                try:
-                    client.indices.create(index=CHUNKS_INDEX, body=mapping)
-                    logger.info(f"Successfully created {CHUNKS_INDEX} index with mapping {i+1}")
-                    created = True
-                    break
-                except Exception as e:
-                    logger.warning(f"Mapping {i+1} failed: {e}")
-                    if i == len(vector_mappings) - 1:  # Last attempt
-                        raise
-            
-            if not created:
-                raise Exception("Failed to create chunks index with any mapping")
+                client.indices.create(index=CHUNKS_INDEX, body=fallback_mapping)
+                logger.info(f"Created {CHUNKS_INDEX} with dense_vector fallback")
 
     except Exception as e:
         logger.error(f"Error ensuring indices: {e}")
         raise
 
+# def index_paper_meta(meta: dict):
+#     """
+#     Index a single paper's metadata in OpenSearch.
+#     """
+#     try:
+#         client.index(index=PAPERS_INDEX, document=meta, id=meta["arxiv_id"])
+#         logger.info(f"Indexed metadata for paper {meta['arxiv_id']}")
+#     except Exception as e:
+#         logger.error(f"Error indexing paper {meta.get('arxiv_id')}: {e}")
 
 def index_paper_meta(meta: dict):
-    """
-    Index a single paper's metadata in OpenSearch.
-    """
-    try:
-        client.index(index=PAPERS_INDEX, document=meta, id=meta["arxiv_id"])
-        logger.info(f"Indexed metadata for paper {meta['arxiv_id']}")
-    except Exception as e:
-        logger.error(f"Error indexing paper {meta.get('arxiv_id')}: {e}")
+    doc = {
+        "arxiv_id": meta["arxiv_id"],
+        "title": meta["title"],
+        "abstract": meta["abstract"],
+        "authors": meta.get("authors", []),
+        "categories": meta.get("categories", []),
+        "published_at": meta.get("published_date"),
+    }
+    client.index(index="papers", id=meta["arxiv_id"], body=doc)
 
 
 def index_chunks_bulk(chunks: list[dict]):

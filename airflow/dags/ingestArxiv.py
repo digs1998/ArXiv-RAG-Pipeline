@@ -12,6 +12,7 @@ from ingestion.downloaders.pdfDownloader import PDFDownloader
 from ingestion.processing import parse_and_chunk
 from ingestion.embeddings import embed_texts
 from ingestion.opensearchClient import ensure_indices, index_paper_meta, index_chunks_bulk
+from ingestion.opensearchSearch import search_papers
 
 logger = logging.getLogger("airflow")
 
@@ -29,7 +30,7 @@ default_args = {
 # -------------------------------------------------------------------
 # Constants
 # -------------------------------------------------------------------
-ARXIV_QUERY = "Explainable AI in medicine"
+ARXIV_QUERY = "Explainable AI in cancer research"
 YEAR_START = 2020
 YEAR_END = 2025
 BATCH_SIZE = 50
@@ -186,6 +187,21 @@ def task_parse_chunk_embed_index(**kwargs):
 
     sess.close()
 
+def task_test_search(**kwargs):
+    """
+    Test multi-field search in OpenSearch.
+    """
+    results = search_papers(
+        query_text="Explainable AI in cancer research",
+        category=None,
+        year_from=2020,
+        year_to=2025,
+        size=5
+    )
+    logger.info(f"Search returned {len(results)} papers")
+    for r in results:
+        logger.info(f"{r['published_at']} - {r['title']} ({r['arxiv_id']})")
+
 # -------------------------------------------------------------------
 # DAG Definition
 # -------------------------------------------------------------------
@@ -204,5 +220,9 @@ with DAG(
     process_index = PythonOperator(
         task_id="parse_chunk_embed_index", python_callable=task_parse_chunk_embed_index
     )
+    test_search = PythonOperator(
+                    task_id="test_search",
+                    python_callable=task_test_search
+                )
 
-    init >> fetch >> store_meta >> download >> process_index
+    init >> fetch >> store_meta >> download >> process_index >> test_search
