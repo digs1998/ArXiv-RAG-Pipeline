@@ -111,8 +111,8 @@ def search_papers(query_text, category=None, year_from=None, year_to=None, size=
 # Example usage
 if __name__ == "__main__":
     results = search_papers(
-        query_text="Explainable AI in Cancer research",
-        category="cs.AI",
+        query_text="AI in Cancer research",
+        category=None,
         year_from=2020,
         year_to=2025,
         size=5

@@ -33,6 +33,7 @@ class Chunk(Base):
     text = Column(Text)
     chunk_idx = Column(Integer)
     created_at = Column(DateTime, default=func.now())
+    section = Column(String, nullable=True)
 
     paper = relationship("Paper", back_populates="chunks")
 

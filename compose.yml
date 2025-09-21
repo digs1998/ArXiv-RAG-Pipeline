@@ -26,7 +26,20 @@ services:
       - ./ingestion:/app/ingestion
     networks:
       - rag-network
-
+  
+  grobid:
+    image: lfoppiano/grobid:latest-crf-multi-arch
+    # platform: linux/amd64
+    ports:
+      - "8070:8070"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8070/api/isalive"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    networks:
+      - rag-network
   # ------------------------
   # Airflow service
   # ------------------------
@@ -37,6 +50,8 @@ services:
     image: rag-airflow:latest
     container_name: rag-airflow
     depends_on:
+      grobid:
+        condition: service_healthy
       postgres:
         condition: service_healthy
       opensearch:
@@ -44,12 +59,15 @@ services:
     env_file:
       - .env
     environment:
+      - GROBID_URL=http://grobid:8070 
       - AIRFLOW_HOME=/opt/airflow
       - PYTHONPATH=/opt/airflow:/opt/airflow/ingestion
       - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
       - OPENSEARCH_HOST=http://opensearch:9200
       - OLLAMA_HOST=http://ollama:11434
     volumes:
+      - ./eval:/opt/airflow/eval
+      - ./scripts:/opt/airflow/scripts
       - ./airflow/dags:/opt/airflow/dags
       - ./ingestion:/opt/airflow/ingestion
       - ./data:/opt/airflow/data

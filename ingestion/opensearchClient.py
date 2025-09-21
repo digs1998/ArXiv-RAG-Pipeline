@@ -45,22 +45,28 @@ def ensure_indices():
                     },
                     "mappings": {
                         "properties": {
+                            "paper_id": {"type": "keyword"},
                             "arxiv_id": {"type": "keyword"},
-                            "title": {
-                                "type": "text",
-                                "analyzer": "scientific_analyzer",
-                                "fields": {"raw": {"type": "keyword"}}
-                            },
-                            "abstract": {
-                                "type": "text",
-                                "analyzer": "scientific_analyzer"
-                            },
-                            "authors": {"type": "keyword"},
-                            "categories": {"type": "keyword"},
-                            "published_at": {"type": "date"},
-                            "pdf_url": {"type": "keyword"}
+                            "chunk_idx": {"type": "integer"},
+                            "text": {"type": "text"},
+                            "section": {"type": "keyword"},   # <-- Add this line
+                            "embedding": {
+                                "type": "knn_vector",
+                                "dimension": 768,
+                                "method": {
+                                    "name": "hnsw",
+                                    "space_type": "cosinesimil",
+                                    "engine": "lucene"
+                                }
+                            }
+                        }
+                    },
+                    "settings": {
+                        "index": {
+                            "knn": True
                         }
                     }
+
                 }
             )
 

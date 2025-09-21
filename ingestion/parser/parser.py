@@ -7,21 +7,33 @@ from pathlib import Path
 logger = logging.getLogger("ingestion")
 
 
+import os
+import requests
+import logging
+
+logger = logging.getLogger("ingestion")
+
 class GrobidParser:
     def __init__(self, grobid_url=None):
         self.grobid_url = grobid_url or os.getenv("GROBID_URL")
 
     def parse(self, pdf_path: str) -> str:
+        if not self.grobid_url:
+            logger.warning("GROBID_URL is not set")
+            return None
         try:
             with open(pdf_path, "rb") as f:
-                files = {"input": f}
-                response = requests.post(self.grobid_url, files=files)
-                response.raise_for_status()
-                return response.text
+                files = {'input': f}
+                r = requests.post(
+                    f"{self.grobid_url}/api/processFulltextDocument",
+                    files=files,
+                    timeout=60  # optional, avoid hanging
+                )
+                r.raise_for_status()
+                return r.text
         except Exception as e:
             logger.warning(f"GROBID parsing failed for {pdf_path}: {e}")
             return None
-
 
 class DoclingParser:
     def parse(self, pdf_path: str) -> str:
