@@ -12,8 +12,8 @@ from ingestion.db import init_db, SessionLocal, upsert_paper, Paper, Chunk
 from ingestion.downloaders.pdfDownloader import PDFDownloader
 from ingestion.processing import parse_and_chunk_with_sections, clean_text_for_db
 from ingestion.embeddings import embed_texts
-from ingestion.opensearchClient import ensure_indices, index_paper_meta, index_chunks_bulk
-from ingestion.opensearchSearch import search_papers
+from ingestion.opensearchRetrieval import QuerySearch
+from ingestion.opensearchClient import OpenSearchClient
 
 logger = logging.getLogger("airflow")
 
@@ -42,7 +42,10 @@ BATCH_SIZE = 20
 def task_init(**kwargs):
     """Initialize database and OpenSearch indices."""
     init_db()
-    ensure_indices()
+    
+    # Use the client directly
+    client = OpenSearchClient()
+    client.ensure_indices()  # This calls create_index()
 
 def task_fetch_metadata(**kwargs):
     client = ArxivClient()
@@ -62,6 +65,28 @@ def task_fetch_metadata(**kwargs):
     print(f"Fetched total {len(all_papers)} papers from arXiv")
     kwargs["ti"].xcom_push(key="papers", value=all_papers)
 
+# def task_store_metadata(**kwargs):
+#     papers = kwargs["ti"].xcom_pull(key="papers", task_ids="fetch_metadata") or []
+#     sess = SessionLocal()
+#     saved = []
+
+#     for p in papers:
+#         meta = {
+#             "arxiv_id": p["arxiv_id"],
+#             "title": p.get("title"),
+#             "authors": p.get("authors", ""),
+#             "abstract": p.get("abstract", ""),
+#             "published_date": p.get("published_year") and f"{p.get('published_year')}-01-01",
+#             "pdf_url": p.get("pdf_url"),
+#         }
+#         paper_obj = upsert_paper(sess, meta=meta, pdf_path=None)
+#         saved.append({"arxiv_id": paper_obj.arxiv_id, "id": paper_obj.id, "pdf_url": paper_obj.pdf_url})
+#         index_paper_meta(meta)
+
+#     sess.commit()
+#     sess.close()
+#     kwargs["ti"].xcom_push(key="saved_papers", value=saved)
+
 def task_store_metadata(**kwargs):
     papers = kwargs["ti"].xcom_pull(key="papers", task_ids="fetch_metadata") or []
     sess = SessionLocal()
@@ -75,10 +100,15 @@ def task_store_metadata(**kwargs):
             "abstract": p.get("abstract", ""),
             "published_date": p.get("published_year") and f"{p.get('published_year')}-01-01",
             "pdf_url": p.get("pdf_url"),
+            "categories": p.get("categories", []),  # Add if available from arXiv
         }
+        
         paper_obj = upsert_paper(sess, meta=meta, pdf_path=None)
         saved.append({"arxiv_id": paper_obj.arxiv_id, "id": paper_obj.id, "pdf_url": paper_obj.pdf_url})
-        index_paper_meta(meta)
+        
+        # Use the new method
+        client = OpenSearchClient()
+        client.index_paper_meta(meta)
 
     sess.commit()
     sess.close()
@@ -108,11 +138,59 @@ def task_download_pdfs(**kwargs):
     mapping = {p.name.replace(".pdf", ""): str(p) for p in paths}
     kwargs["ti"].xcom_push(key="pdf_paths", value=mapping)
 
+# def task_parse_chunk_embed_index(**kwargs):
+#     saved = kwargs["ti"].xcom_pull(key="saved_papers", task_ids="store_metadata") or []
+#     pdf_map = kwargs["ti"].xcom_pull(key="pdf_paths", task_ids="download_pdfs") or {}
+#     sess = SessionLocal()
+
+#     for s in saved:
+#         arxiv_id = s["arxiv_id"]
+#         paper_obj = sess.query(Paper).filter_by(arxiv_id=arxiv_id).one_or_none()
+#         if not paper_obj:
+#             continue
+
+#         pdf_path = pdf_map.get(arxiv_id)
+#         if not pdf_path:
+#             logger.warning("No pdf path for %s", arxiv_id)
+#             continue
+
+#         # parse and section-chunk -> returns list of (text, section)
+#         chunks = parse_and_chunk_with_sections(pdf_path)
+#         if not chunks:
+#             logger.info("No chunks for %s", arxiv_id)
+#             continue
+
+#         # Save chunk records to DB
+#         for idx, (txt, section) in enumerate(chunks):
+#             sess.add(Chunk(paper_id=paper_obj.id, text=txt, chunk_idx=idx, section=section))
+#         sess.commit()
+
+#         # Generate embeddings (batch)
+#         texts = [txt for txt, _ in chunks]
+#         embeddings = embed_texts(texts)
+
+#         # Build docs and bulk index
+#         docs = []
+#         for idx, ((txt, section), emb) in enumerate(zip(chunks, embeddings)):
+#             docs.append({
+#                 "paper_id": paper_obj.id,
+#                 "arxiv_id": arxiv_id,
+#                 "chunk_idx": idx,
+#                 "text": txt,
+#                 "section": section,
+#                 "embedding": emb
+#             })
+#         if docs:
+#             index_chunks_bulk(docs)
+
+#     sess.close()
+
 def task_parse_chunk_embed_index(**kwargs):
     saved = kwargs["ti"].xcom_pull(key="saved_papers", task_ids="store_metadata") or []
     pdf_map = kwargs["ti"].xcom_pull(key="pdf_paths", task_ids="download_pdfs") or {}
     sess = SessionLocal()
 
+    successful = 0
     for s in saved:
         arxiv_id = s["arxiv_id"]
         paper_obj = sess.query(Paper).filter_by(arxiv_id=arxiv_id).one_or_none()
@@ -121,45 +199,79 @@ def task_parse_chunk_embed_index(**kwargs):
 
         pdf_path = pdf_map.get(arxiv_id)
         if not pdf_path:
-            logger.warning("No pdf path for %s", arxiv_id)
+            logger.warning(f"No pdf path for {arxiv_id}")
             continue
 
-        # parse and section-chunk -> returns list of (text, section)
-        chunks = parse_and_chunk_with_sections(pdf_path)
-        if not chunks:
-            logger.info("No chunks for %s", arxiv_id)
+        try:
+            # Parse and chunk (your existing logic)
+            chunks = parse_and_chunk_with_sections(pdf_path)
+            if not chunks:
+                logger.info(f"No chunks for {arxiv_id}")
+                continue
+
+            # Save chunks to DB (your existing logic)
+            for idx, (txt, section) in enumerate(chunks):
+                sess.add(Chunk(paper_id=paper_obj.id, text=txt, chunk_idx=idx, section=section))
+            sess.commit()
+
+            # Generate embeddings
+            texts = [txt for txt, _ in chunks]
+            embeddings = embed_texts(texts)
+            
+            if len(embeddings) != len(chunks):
+                logger.warning(f"Embedding mismatch for {arxiv_id}")
+                continue
+
+            # Use the new bulk method
+            chunk_docs = []
+            for idx, ((txt, section), emb) in enumerate(zip(chunks, embeddings)):
+                chunk_docs.append({
+                    "arxiv_id": arxiv_id,
+                    "text": txt,
+                    "section": section,
+                    "embedding": emb,
+                    "paper_id": paper_obj.id,
+                    "chunk_idx": idx
+                })
+            
+            client = OpenSearchClient()
+            client.index_chunks_bulk(chunk_docs)
+            successful += 1
+            
+        except Exception as e:
+            logger.error(f"Failed to process {arxiv_id}: {e}")
             continue
-
-        # Save chunk records to DB
-        for idx, (txt, section) in enumerate(chunks):
-            sess.add(Chunk(paper_id=paper_obj.id, text=txt, chunk_idx=idx, section=section))
-        sess.commit()
-
-        # Generate embeddings (batch)
-        texts = [txt for txt, _ in chunks]
-        embeddings = embed_texts(texts)
-
-        # Build docs and bulk index
-        docs = []
-        for idx, ((txt, section), emb) in enumerate(zip(chunks, embeddings)):
-            docs.append({
-                "paper_id": paper_obj.id,
-                "arxiv_id": arxiv_id,
-                "chunk_idx": idx,
-                "text": txt,
-                "section": section,
-                "embedding": emb
-            })
-        if docs:
-            index_chunks_bulk(docs)
 
     sess.close()
+    logger.info(f"Successfully processed {successful}/{len(saved)} papers")
 
 def task_test_search(**kwargs):
-    results = search_papers(query_text=ARXIV_QUERY, size=5)
-    logger.info(f"Search returned {len(results)} papers")
-    for r in results:
-        logger.info(f"{r.get('published_at')} - {r.get('title')} ({r.get('arxiv_id')})")
+    """Test the new BM25/hybrid search capabilities"""
+    client = OpenSearchClient()
+    search_engine = QuerySearch(client)
+    
+    # Test different modes
+    test_cases = [
+        {"query": ARXIV_QUERY, "mode": "bm25", "size": 3},
+        {"query": "cancer imaging", "mode": "hybrid", "size": 3},
+    ]
+    
+    for test in test_cases:
+        try:
+            results = search_engine.search(**test)
+            logger.info(f"=== {test['mode'].upper()} Search: '{test['query']}' ===")
+            logger.info(f"Found {results['total']} results")  # ✅ fixed
+            
+            for i, hit in enumerate(results['hits'][:2], 1):  # ✅ fixed
+                source = hit.get('_source', {})
+                score = hit.get('_score', hit.get('score', 0.0))
+                title = source.get('title', 'No title')
+                arxiv_id = source.get('arxiv_id', 'No ID')
+                logger.info(f"{i}. [{score:.3f}] {title[:60]}... ({arxiv_id})")
+                
+        except Exception as e:
+            logger.error(f"Search {test['mode']} failed: {e}")
+
 
 # -------------------------------------------------------------------
 # DAG Definition

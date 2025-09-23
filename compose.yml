@@ -16,6 +16,9 @@ services:
         condition: service_healthy
       opensearch:
         condition: service_healthy
+    command: >
+      sh -c "sleep 30 && 
+             uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
     env_file:
       - .env
     environment:
@@ -54,8 +57,14 @@ services:
         condition: service_healthy
       postgres:
         condition: service_healthy
+      ollama:
+        condition: service_healthy
       opensearch:
         condition: service_healthy
+    # command: >
+    #     sh -c "sleep 45 && 
+    #           airflow db init && 
+    #           airflow webserver"
     env_file:
       - .env
     environment:
@@ -66,10 +75,10 @@ services:
       - OPENSEARCH_HOST=http://opensearch:9200
       - OLLAMA_HOST=http://ollama:11434
     volumes:
-      - ./eval:/opt/airflow/eval
       - ./scripts:/opt/airflow/scripts
       - ./airflow/dags:/opt/airflow/dags
       - ./ingestion:/opt/airflow/ingestion
+      - ./api:/opt/airflow/api
       - ./data:/opt/airflow/data
       - ./airflow/plugins:/opt/airflow/plugins
       - airflow_logs:/opt/airflow/logs
@@ -85,6 +94,8 @@ services:
     image: opensearchproject/opensearch:2.19.0
     container_name: rag-opensearch
     environment:
+      - OPENSEARCH_HOST=opensearch
+      - OPENSEARCH_PORT=9200
       - discovery.type=single-node
       - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
       - DISABLE_SECURITY_PLUGIN=true
@@ -100,9 +111,9 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9200 || exit 1"]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 30s
+      timeout: 20s
+      retries: 15  # ✅ More retries
+      start_period: 60s  # ✅ Longer startup
     networks:
       - rag-network
 
@@ -138,6 +149,7 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    command: ["ollama", "pull", "nomic-embed-text"]
     deploy:
       resources:
         limits:

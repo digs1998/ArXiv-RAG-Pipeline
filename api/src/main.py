@@ -1,36 +1,113 @@
-from fastapi import FastAPI, Query
-from pydantic import BaseModel
-from ingestion.embeddings import embed_texts
-from ingestion.opensearchRetrieval import search_bm25_chunks, search_vector, search_hybrid
-import logging
+# /app/src/main.py
+from fastapi import FastAPI
+from pydantic import BaseModel, Field
+from typing import List, Optional
+from ingestion.opensearchRetrieval import QuerySearch  # Your search engine
+from ingestion.opensearchClient import OpenSearchClient
 
-logger = logging.getLogger("api")
-app = FastAPI(title="Unified Search API")
+app = FastAPI(title="Search RAG API", version="1.0.0")
 
 class SearchRequest(BaseModel):
+    query: str = Field(..., description="Search query text")
+    mode: str = Field("hybrid", description="Search mode: 'bm25', 'knn', or 'hybrid'")
+    categories: Optional[List[str]] = Field(None, description="Filter by arXiv categories")
+    year_from: Optional[int] = Field(None, description="Filter by publication year (from)")
+    year_to: Optional[int] = Field(None, description="Filter by publication year (to)")
+    latest_papers: bool = Field(False, description="Sort by recency")
+    size: int = Field(10, ge=1, le=100, description="Number of results")
+    from_: int = Field(0, alias="from", description="Pagination offset")
+
+
+
+# ✅ Search response model (you probably have this)
+class SearchHit(BaseModel):
+    arxiv_id: str
+    title: str
+    authors: str
+    abstract: str
+    score: float
+    original_score: Optional[float] = None
+    search_mode: str
+    section: Optional[str] = None
+
+class SearchResponse(BaseModel):
     query: str
-    mode: str = Query("bm25", regex="^(bm25|vector|hybrid)$")
-    k: int = 10
+    total: int
+    hits: List[SearchHit]
+    search_mode: str
+    took: float
 
-@app.get("/")
-async def root():
-    return {"message": "Hybrid Search API running!"}
+# Initialize services
+client = OpenSearchClient()
+search_engine = QuerySearch(client)
 
-@app.post("/search")
-def search(req: SearchRequest):
-    if req.mode == "bm25":
-        results = search_bm25_chunks(req.query, top_k=req.k)
-        return {"mode": "bm25", "results": results}
+@app.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    try:
+        info = client.client.info()
+        return {
+            "status": "healthy",
+            "opensearch_version": info.get("version", {}).get("number", "unknown"),
+            "indices": client.get_index_stats()
+        }
+    except Exception as e:
+        return {"status": "unhealthy", "error": str(e)}
 
-    if req.mode == "vector":
-        results = search_vector(req.query, top_k=req.k)
-        if not results:  # fallback if embeddings fail
-            results = search_bm25_chunks(req.query, top_k=req.k)
-            return {"mode": "vector-fallback-bm25", "results": results}
-        return {"mode": "vector", "results": results}
+@app.post("/search", response_model=SearchResponse)
+async def search_papers(request: SearchRequest):  # ✅ Now properly defined!
+    """Week 4 Hybrid Search Endpoint"""
+    try:
+        # Execute search with your Week 4 logic
+        results = search_engine.search(
+            query=request.query,
+            mode=request.mode,
+            # arxiv_ids=request.arxiv_ids,
+            categories=request.categories,
+            year_from=request.year_from,
+            year_to=request.year_to,
+            size=request.size
+            # pass from_=request.from_ if you want pagination
+        )
+        
+        # Transform results for API response
+        hits = []
+        for hit in results['hits']['hits']:
+            source = hit.get('_source', {})
+            main_score = hit.get('_score', 0.0)
+            original_score = hit.get('original_score')
+            
+            # Handle both paper and chunk results
+            title = source.get('title') or source.get('chunk_text', '')[:100] + "..."
+            abstract = source.get('abstract') or source.get('chunk_text', '')[:200] + "..."
+            
+            hits.append(SearchHit(
+                arxiv_id=source.get('arxiv_id', ''),
+                title=title,
+                authors=source.get('authors', 'N/A'),
+                abstract=abstract,
+                score=round(main_score, 4),
+                original_score=round(original_score, 4) if original_score else None,
+                search_mode=request.mode,
+                section=source.get('section')
+            ))
+        
+        return SearchResponse(
+            query=request.query,
+            total=results['hits']['total']['value'],
+            hits=hits,
+            search_mode=results.get('search_mode', request.mode),
+            took=round(results.get('took', 0) * 1000, 2),
+            # optionally add from_ if you extend your SearchResponse model
+        )
 
-    if req.mode == "hybrid":
-        results = search_hybrid(req.query, top_k=req.k)
-        return {"mode": "hybrid", "results": results}
-
-    return {"error": "Invalid mode"}
+        
+    except Exception as e:
+        print(f"Search error: {e}")
+        return SearchResponse(
+            query=request.query,
+            total=0,
+            hits=[],
+            search_mode=request.mode,
+            took=0.0
+        )
