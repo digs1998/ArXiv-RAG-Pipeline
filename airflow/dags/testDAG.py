@@ -34,7 +34,7 @@ def test_file_access(**context):
     print("Testing file system access...")
     
     # Check if ingestion folder exists
-    ingestion_path = "/opt/airflow/ingestion"
+    ingestion_path = "/opt/airflow/"
     if os.path.exists(ingestion_path):
         print(f"✅ {ingestion_path} exists")
         files = os.listdir(ingestion_path)

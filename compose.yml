@@ -1,13 +1,9 @@
-version: "3.12"
-
 services:
   # ------------------------
   # API service
   # ------------------------
   api:
-    build:
-      context: ./api
-      dockerfile: Dockerfile
+    build: .
     container_name: rag-api
     ports:
       - "8000:8000"
@@ -16,17 +12,20 @@ services:
         condition: service_healthy
       opensearch:
         condition: service_healthy
-    command: >
-      sh -c "sleep 30 && 
-             uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload"
+    # healthcheck:
+    #   test: ["CMD-SHELL", "curl -f http://localhost:8000/api/v1/search || exit 1"]
+    #   interval: 30s
+    #   timeout: 10s
+    #   retries: 3
+    #   start_period: 40s
     env_file:
       - .env
     environment:
       - OPENSEARCH_HOST=http://opensearch:9200
+      - OPENSEARCH__HOST=http://opensearch:9200
       - OLLAMA_HOST=http://ollama:11434
       - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
-    volumes:
-      - ./ingestion:/app/ingestion
+      - REDIS__HOST=redis
     networks:
       - rag-network
   
@@ -61,26 +60,20 @@ services:
         condition: service_healthy
       opensearch:
         condition: service_healthy
-    # command: >
-    #     sh -c "sleep 45 && 
-    #           airflow db init && 
-    #           airflow webserver"
     env_file:
       - .env
     environment:
       - GROBID_URL=http://grobid:8070 
       - AIRFLOW_HOME=/opt/airflow
-      - PYTHONPATH=/opt/airflow:/opt/airflow/ingestion
+      - PYTHONPATH=/opt/airflow:/opt/airflow/src
       - POSTGRES_DATABASE_URL=postgresql+psycopg2://rag_user:rag_password@postgres:5432/rag_db
       - OPENSEARCH_HOST=http://opensearch:9200
       - OLLAMA_HOST=http://ollama:11434
     volumes:
-      - ./scripts:/opt/airflow/scripts
       - ./airflow/dags:/opt/airflow/dags
-      - ./ingestion:/opt/airflow/ingestion
+      - ./src:/opt/airflow/src
       - ./api:/opt/airflow/api
       - ./data:/opt/airflow/data
-      - ./airflow/plugins:/opt/airflow/plugins
       - airflow_logs:/opt/airflow/logs
     ports:
       - "8080:8080"
@@ -97,7 +90,7 @@ services:
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
       - discovery.type=single-node
-      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
       - DISABLE_SECURITY_PLUGIN=true
       - bootstrap.memory_lock=true
     ports:
@@ -117,6 +110,23 @@ services:
     networks:
       - rag-network
 
+  redis:
+    image: redis:7-alpine
+    container_name: rag-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - rag-network
 
   # ------------------------
   # OpenSearch Dashboards
@@ -149,7 +159,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-    command: ["ollama", "pull", "nomic-embed-text"]
     deploy:
       resources:
         limits:
@@ -188,6 +197,7 @@ volumes:
   opensearch_data:
   ollama_data:
   airflow_logs:
+  redis_data:
 
 networks:
   rag-network:
