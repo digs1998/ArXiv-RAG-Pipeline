@@ -5,3 +5,5 @@ rag_env/
 .env
 data/
 .DS_Store
+.pytest
+textChunker.py

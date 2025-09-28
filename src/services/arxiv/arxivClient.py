@@ -92,8 +92,14 @@ class ArxivClient:
         if max_results is None:
             max_results = self.max_results
 
-        # search_query = f"cat:{self._settings.search_category}"
-        search_query = "Explaiable AI in Healthcare"
+        
+        search_query = f"cat:{self._settings.search_category}"
+        
+        if len(self._settings.search_category) == 1:
+            search_query = f"cat:{self._settings.search_category[0]}"
+        else:
+            joined_cats = " OR ".join([f"cat:{cat}" for cat in self._settings.search_category])
+            search_query = f"({joined_cats})"
 
         if from_date or to_date:
             date_from = f"{from_date}2000" if from_date else "*"

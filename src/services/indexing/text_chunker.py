@@ -402,7 +402,7 @@ class TextChunker:
             combined_content.append(f"Section: {section_title}\n\n{content}")
             total_words += word_count
 
-        combined_text = f"{header}{'\\n\\n'.join(combined_content)}"
+        combined_text = f"{header}{''.join(combined_content)}"
 
         # If still too small, combine with previous chunk if possible
         if total_words + len(header.split()) < 200 and existing_chunks:

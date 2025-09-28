@@ -1,6 +1,6 @@
 import os
 from pathlib import Path
-from typing import Literal
+from typing import Literal, List
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -33,7 +33,7 @@ class ArxivSettings(BaseConfigSettings):
     rate_limit_delay: float = 3.0
     timeout_seconds: int = 30
     max_results: int = 15
-    search_category: str = "cs.AI"
+    search_category: List[str] = ["cs.AI", "cs.LG"]
     download_max_retries: int = 3
     download_retry_delay_base: float = 5.0
     max_concurrent_downloads: int = 5
@@ -163,7 +163,7 @@ class Settings(BaseConfigSettings):
     ollama_timeout: int = 300
 
     # Jina AI embeddings configuration
-    jina_api_key: str = "jina_0feba59cc0dd41cca7c1b5d1c617cd4a5R50wZ90Tk4g2eZ6SQUcMT81ZLEN"
+    jina_api_key: str = ""
 
     arxiv: ArxivSettings = Field(default_factory=ArxivSettings)
     pdf_parser: PDFParserSettings = Field(default_factory=PDFParserSettings)
