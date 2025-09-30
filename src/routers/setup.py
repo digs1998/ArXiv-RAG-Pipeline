@@ -1,9 +1,9 @@
 from fastapi import APIRouter
 from sqlalchemy import text
 
-from ..dependencies import DatabaseDep, OpenSearchDep, SettingsDep
-from ..schemas.api.health import HealthResponse, ServiceStatus
-from ..services.ollama import OllamaClient
+from src.dependencies import DatabaseDep, OpenSearchDep, SettingsDep
+from src.schemas.api.health import HealthResponse, ServiceStatus
+from src.services.ollama.client import OllamaClient
 
 router = APIRouter()
 

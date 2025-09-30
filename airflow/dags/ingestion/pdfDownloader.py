@@ -26,8 +26,8 @@ async def run_paper_ingestion_pipeline(
     with database.get_session() as session:
         return await metadata_fetcher.fetch_and_process_papers(
             max_results=max_results,
-            from_date=20200926,
-            to_date=20250927,
+            from_date="20200101",
+            to_date=datetime.now().strftime("%Y%m%d"),
             process_pdfs=process_pdfs,
             store_to_db=True,
             db_session=session,
