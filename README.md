@@ -168,12 +168,9 @@ Airflow Logs: Check task logs in the Airflow UI (DAG → Task → Logs).
 Ollama Logs: Monitor Ollama container logs:docker logs ollama -f
 
 
-Storage Usage: Check the number of downloaded PDFs:ls -la ./data/pdfs/ | wc -l
+Storage Usage: Check the number of downloaded PDFs
 
-
-Database Status: Verify the number of stored papers:docker exec -it postgres psql -U airflow -d airflow -c "SELECT COUNT(*) FROM papers;"
-
-
+`ls -la ./data/pdfs/ | wc -l`
 
 Troubleshooting
 
