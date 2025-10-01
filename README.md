@@ -7,6 +7,48 @@ System Requirements: At least 8GB RAM and ~10GB disk space for PDFs and indices.
 Operating System: Linux, macOS, or Windows (with WSL2 recommended for Windows).
 Dependencies: Docker, Docker Compose, and Git installed.
 
+### Folder Structure
+
+```
+.
+├── __pycache__
+│   └── textChunker.cpython-313-pytest-8.4.2.pyc
+├── airflow
+│   ├── dags
+│   ├── Dockerfile
+│   ├── entrypoint.sh
+│   └── requirements-airflow.txt
+├── api
+├── compose.yml
+├── data
+│   └── arxiv_pdfs
+├── Dockerfile
+├── gradio_launcher.py
+├── Makefile
+├── rag_env
+│   ├── bin
+│   ├── include
+│   ├── lib
+│   ├── pyvenv.cfg
+│   └── share
+├── README.md
+├── requirements.txt
+├── src
+│   ├── __pycache__
+│   ├── config.py
+│   ├── db
+│   ├── dependencies.py
+│   ├── exceptions.py
+│   ├── gradio_app.py
+│   ├── main.py
+│   ├── models
+│   ├── repositories
+│   ├── routers
+│   ├── schemas
+│   └── services
+└── textChunker.py
+```
+
 ### Setup Instructions
 1. Install Docker and Docker Compose
 
@@ -17,6 +59,7 @@ Follow the official documentation based on the OS from https://www.docker.com/ge
 Clone the ArXiv RAG Pipeline repository to your local machine:
 
 `git clone https://github.com/digs1998/ArXiv-RAG-Pipeline.git`
+
 `cd ArXiv-RAG-Pipeline`
 
 3. Set Up Environment Variables
@@ -55,6 +98,7 @@ Refer Jina AI (1024) api page to get free API key: https://jina.ai/
 While in Ollama, once it is setup, login to the container and pull the latest llama model
 
 `docker exec -it rag-ollama bash`
+
 `docker pull <image-name>/llama3.2` refer https://hub.docker.com/r/ollama/ollama, to get latest image downloaded
 
 6. Configure Airflow
@@ -94,11 +138,13 @@ chmod -R 777 data/pdfs
 Usage
 Querying the RAG System
 Use the OpenSearch client to perform semantic searches:
+
 from opensearchpy import OpenSearch
 
 client = OpenSearch([{'host': 'localhost', 'port': 9200}])
 
 # Example: Semantic search
+```
 query = {
     "query": {
         "knn": {
@@ -109,6 +155,7 @@ query = {
         }
     }
 }
+```
 
 results = client.search(index="chunks", body=query)
 
