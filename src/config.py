@@ -32,9 +32,9 @@ class ArxivSettings(BaseConfigSettings):
     pdf_cache_dir: str = "./data/arxiv_pdfs"
     rate_limit_delay: float = 3.0
     timeout_seconds: int = 30
-    max_results: int = 15
+    max_results: int = 10
     search_category: List[str] = ["cs.AI", "cs.LG"]
-    download_max_retries: int = 3
+    download_max_retries: int = 4
     download_retry_delay_base: float = 5.0
     max_concurrent_downloads: int = 5
     max_concurrent_parsing: int = 1
@@ -77,7 +77,7 @@ class ChunkingSettings(BaseConfigSettings):
         case_sensitive=False,
     )
 
-    chunk_size: int = 600  # Target words per chunk
+    chunk_size: int = 300  # Target words per chunk
     overlap_size: int = 100  # Words to overlap between chunks
     min_chunk_size: int = 100  # Minimum words for a valid chunk
     section_based: bool = True  # Use section-based chunking when available

@@ -1,7 +1,6 @@
 FROM python:3.12-slim AS base
 
 WORKDIR /app
-
 # Install OS deps (needed for psycopg2, etc.)
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \

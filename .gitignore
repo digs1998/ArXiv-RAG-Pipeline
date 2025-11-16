@@ -6,4 +6,6 @@ rag_env/
 data/
 .DS_Store
 .pytest
+.gradio
+.pytest_cache
 textChunker.py

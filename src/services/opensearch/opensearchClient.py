@@ -333,7 +333,16 @@ class OpenSearchClient:
                 action = {"_index": self.index_name, "_source": chunk_data}
                 actions.append(action)
 
-            success, failed = helpers.bulk(self.client, actions, refresh=True)
+            # Use smaller batches and built-in retry/backoff to avoid 429s from OpenSearch
+            success, failed = helpers.bulk(
+                self.client,
+                actions,
+                refresh=False,
+                chunk_size=200,
+                max_retries=5,
+                initial_backoff=1,
+                max_backoff=30,
+            )
 
             logger.info(f"Bulk indexed {success} chunks, {len(failed)} failed")
             return {"success": success, "failed": len(failed)}

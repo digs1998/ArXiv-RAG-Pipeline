@@ -29,7 +29,7 @@ dag = DAG(
     description="Daily arXiv CS.AI paper pipeline: fetch → store to PostgreSQL → chunk & embed → hybrid OpenSearch indexing",
     schedule="1 0 * * 1-5",  # Monday-Friday at 10 AM UTC
     max_active_runs=1,
-    catchup=False,
+    catchup=True,
     tags=["arxiv", "papers", "ingestion", "hybrid-search", "embeddings", "chunks"],
 )
 

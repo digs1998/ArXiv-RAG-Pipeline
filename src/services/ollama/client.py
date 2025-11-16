@@ -97,10 +97,12 @@ class OllamaClient:
         """
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
+                # Ollama's /api/generate returns a `response` field for non-streaming calls.
+                # Using it avoids the chat-format message envelope that /api/chat expects.
                 data = {"model": model, "prompt": prompt, "stream": stream, **kwargs}
 
                 logger.info(f"Sending request to Ollama: model={model}, stream={stream}, extra_params={kwargs}")
-                response = await client.post(f"{self.base_url}/api/chat", json=data)
+                response = await client.post(f"{self.base_url}/api/generate", json=data)
 
                 if response.status_code == 200:
                     return response.json()

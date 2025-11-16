@@ -90,7 +90,7 @@ services:
       - OPENSEARCH_HOST=opensearch
       - OPENSEARCH_PORT=9200
       - discovery.type=single-node
-      - OPENSEARCH_JAVA_OPTS=-Xms2g -Xmx2g
+      - OPENSEARCH_JAVA_OPTS=-Xms4g -Xmx4g
       - DISABLE_SECURITY_PLUGIN=true
       - bootstrap.memory_lock=true
     ports:
@@ -101,6 +101,7 @@ services:
         hard: -1
     volumes:
       - opensearch_data:/usr/share/opensearch/data
+
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:9200 || exit 1"]
       interval: 30s
